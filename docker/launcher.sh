@@ -64,7 +64,6 @@ DisplayHelp()
 
 RunCommand()
 {
-  config_log_enabled="0"
   # Usage: RunCommand <command_name> <parameters>
 
   if [[ $# == 0 ]]; then
@@ -85,6 +84,7 @@ RunCommand()
   # command_file_path=$(realpath ${command_file_path})
   Log "info" "1" "Command File" "${command_file_path}"
   if [ -f "${command_file_path}"  ]; then
+    cd ${g_caller_dir}
     ${command_file_path} "$@"
   else
     Log "error" "1" "Invalid Command" "${command_name}"
@@ -99,8 +99,9 @@ RunCommand()
 set -E
 trap 'ErrorHandler $LINENO' ERR
 
+config_log_enabled="1"
 Init
-RunCommand "$@"
 ScriptDetail
+RunCommand "$@"
 End 0
 
