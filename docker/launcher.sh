@@ -56,6 +56,7 @@ DisplayHelp()
   echo " "
   echo "- Commands:"
   echo "help : Display this command help"
+  echo "bash : Run the bash inside the machine"
   echo "create_metadata : Create publishing metadata information"
   echo " "
   echo "For command special help type:"
@@ -77,6 +78,11 @@ RunCommand()
 
   if [ "${command_name}" = "help" ]; then
     DisplayHelp
+    return 0
+  fi
+
+  if [ "${command_name}" = "bash" ]; then
+    bash "$@"
     return 0
   fi
 
