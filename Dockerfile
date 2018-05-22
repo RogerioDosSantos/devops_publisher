@@ -12,12 +12,14 @@ MAINTAINER Roger Santos (http://rogeriodossantos.github.io)
 WORKDIR /root/
 
 RUN mkdir -p /work \
-      mkdir -p /docker
+      mkdir -p /docker \
+      mkdir -p /src
 
+COPY ./docker/run_image.sh /docker/
+COPY ./docker/entrypoint.sh /docker/
+COPY ./docker/launcher.sh /docker/
+COPY ./docker/README.md /docker/
 
-
-COPY ./entrypoint.sh /docker/
-COPY ./run_image.sh /docker/
-COPY ./README.md /docker/
+COPY ./src /src
 
 ENTRYPOINT ["/docker/entrypoint.sh"]

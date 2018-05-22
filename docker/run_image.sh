@@ -1,292 +1,157 @@
 #!/bin/bash
 
-config_repository_user="rogersantos"
-config_repository_image="publisher"
+# Functions
 
-DisplayError() {
-    echo -e >&2 ERROR: $@\\n
-}
+Log()
+{
+  # Log <type> <level> <message> <detail>
 
-DisplayErrorAndExist() {
-    DisplayError $@
-    exit 1
-}
-
-Log(){
-  # Log <message>
-  if [ ! -z "${config_debug}" ]; then
-    echo "$@"
+  if [ "${config_log_enabled}" != "1" ]; then
+    return 0
   fi
-} 
 
-HasCommand() {
-    # eg. HasCommand command update
-    local kind=$1
-    local name=$2
-
-    type -t $kind:$name | grep -q function
+  local log_type=$1
+  local log_level=$2
+  local log_message=$3
+  local log_detail=$4
+  local log_date="$(date '+%Y-%m-%d %H:%M:%S')"
+  local log_caller=${FUNCNAME[1]}
+  echo "${log_date},${log_type},${log_level},${log_caller},${log_message},${log_detail}"
 }
 
-IsVirtualBox(){
+Init()
+{
+  # Setup - Go to the directory where the bash file is
+  g_script_name="$(basename "$0")"
+  g_caller_dir=$(pwd)
+  cd "$(dirname "$0")"
+  g_script_dir=$(pwd)
+  g_session_dir="${g_script_dir}/${RANDOM}_publisher_${RANDOM}"
+  mkdir -p "${g_session_dir}"
+
+  # exec > "${g_session_dir}/run_image.log"
+}
+
+End()
+{
+  Log "info" "5" "Removing session directory" "${g_session_dir}"
+  rm -r "${g_session_dir}"
+
+  Log "info" "5" "Returning to caller directory" "${g_caller_dir}"
+  cd "${g_caller_dir}"
+}
+
+ErrorHandler()
+{
+  # Usage: ErrorHandler <last_line>
+  local last_line=$1
+  Log "error" "1" "Last line executed" "${last_line}"
+  End
+  exit 1
+}
+
+ScriptDetail()
+{
+  Log "info" "5" "Script Name" "$(basename "$0")"
+  Log "info" "5" "Caller Directory" "${g_caller_dir}"
+  Log "info" "5" "Script Directory" "${g_script_dir}"
+  Log "info" "5" "Session Directory" "${g_session_dir}"
+}
+
+GetConfiguration()
+{
+  config_options="$@"
+  config_log_enabled="0"
+  config_log_type="error"
+  config_log_level="1"
+  config_image="rogersantos/publisher"
+}
+
+IsVirtualBox()
+{
+  # Usage: IsVirtualBox <out:result>
+
   local result=$1
+
   local is_virtualbox_provider="$(docker info | grep provider=virtualbox)"
   if [ ${is_virtualbox_provider} = "provider=virtualbox" ]; then
-    Log "Docker Server is running on VirtualBox"
+    Log "info" "5" "Docker Server is running on VirtualBox" "${g_session_dir}"
     eval $result=true
-    # eval $result=false
     return
   fi
 
   eval $result=false
 }
 
-command:update-image() {
-    docker pull $FINAL_IMAGE
-}
+NormalizeDir()
+{
+  # Usage: NormalizeDir <out:result> <in:directory> 
 
-help:update-image() {
-    echo Pull the latest $FINAL_IMAGE .
-}
+  local result=$1
+  local directory=$2
 
-command:update-script() {
-    if cmp -s <( docker run --rm $FINAL_IMAGE ) $0; then
-        echo $0 is up to date
+  local is_ubuntu_on_windows=$([ -e /proc/version ] && grep -l Microsoft /proc/version || echo "")
+  local is_cygwin=$([ -e /proc/version ] && grep -l MINGW /proc/version || echo "")
+  # Change the PWD when working in Docker on Windows
+  if [ -n "${is_ubuntu_on_windows}" ]; then
+    if IsVirtualBox ret && "${ret}" == "true"; then
+        # directory=`pwd -P`
+        directory=${directory/\/mnt\//}
+        directory="/${directory}"
     else
-        echo -n Updating $0 '... '
-        docker run --rm $FINAL_IMAGE > $0 && echo ok
+        # directory=`pwd -P`
+        directory=${directory/\/mnt\//}
+        directory=${directory/\//:\/}
     fi
-}
-
-help:update-image() {
-    echo Update $0 from $FINAL_IMAGE .
-}
-
-command:update() {
-    command:update-image
-    command:update-script
-}
-
-help:update() {
-    echo Pull the latest $FINAL_IMAGE, and then update $0 from that.
-}
-
-command:help() {
-    if [[ $# != 0 ]]; then
-        if ! HasCommand command $1; then
-            DisplayError \"$1\" is not supported command
-            command:help
-        elif ! HasCommand help $1; then
-            DisplayError No help found for \"$1\"
-        else
-            help:$1
-        fi
-    else
-        cat >&2 <<ENDHELP
-Usage: dockcross [options] [--] command [args]
-
-By default, run the given *command* in an dockcross Docker container.
-
-The *options* can be one of:
-
-    --args|-a           Extra args to the *docker run* command
-    --config|-c         Bash script to source before running this script
-    --debug|-d          Display the docker command being used
-
-Additionally, there are special update commands:
-
-    update-image
-    update-script
-    update
-
-For update command help use: $0 help <command>
-ENDHELP
-        exit 1
-    fi
-}
-
-#------------------------------------------------------------------------------
-# Option processing
-#
-special_update_command=''
-while [[ $# != 0 ]]; do
-    case $1 in
-
-        --)
-            shift
-            break
-            ;;
-
-        --debug|-d)
-            config_debug="1"
-            shift 1
-            ;;
-
-        --args|-a)
-            ARG_ARGS="$2"
-            shift 2
-            ;;
-
-        --config|-c)
-            ARG_CONFIG="$2"
-            shift 2
-            ;;
-
-        update|update-image|update-script)
-            special_update_command=$1
-            break
-            ;;
-        -*)
-            DisplayError Unknown option \"$1\"
-            command:help
-            exit
-            ;;
-
-        *)
-            break
-            ;;
-
-    esac
-done
-
-# The precedence for options is:
-# 1. command-line arguments
-# 2. environment variables
-# 3. defaults
-
-# Source the config file if it exists
-DEFAULT_DOCKCROSS_CONFIG=~/.dockcross
-FINAL_CONFIG=${ARG_CONFIG-${DOCKCROSS_CONFIG-$DEFAULT_DOCKCROSS_CONFIG}}
-
-[[ -f "$FINAL_CONFIG" ]] && source "$FINAL_CONFIG"
-
-# Set the docker image
-FINAL_IMAGE="${config_repository_user}/${config_repository_image}"
-
-# Handle special update command
-if [ "$special_update_command" != "" ]; then
-    case $special_update_command in
-
-        update)
-            command:update
-            exit $?
-            ;;
-
-        update-image)
-            command:update-image
-            exit $?
-            ;;
-
-        update-script)
-            command:update-script
-            exit $?
-            ;;
-
-    esac
-fi
-
-# Set the docker run extra args (if any)
-FINAL_ARGS=${ARG_ARGS-${DOCKCROSS_ARGS}}
-
-# Bash on Ubuntu on Windows
-UBUNTU_ON_WINDOWS=$([ -e /proc/version ] && grep -l Microsoft /proc/version || echo "")
-# MSYS, Git Bash, etc.
-MSYS=$([ -e /proc/version ] && grep -l MINGW /proc/version || echo "")
-
-if [ -z "$UBUNTU_ON_WINDOWS" -a -z "$MSYS" ]; then
-    USER_IDS="-e BUILDER_UID=$( id -u ) -e BUILDER_GID=$( id -g ) -e BUILDER_USER=$( id -un ) -e BUILDER_GROUP=$( id -gn )"
-fi
-
-# Change the PWD when working in Docker on Windows
-if [ -n "$UBUNTU_ON_WINDOWS" ]; then
-  if IsVirtualBox ret && "${ret}" == "true"; then
-      HOST_PWD=`pwd -P`
-      HOST_PWD=${HOST_PWD/\/mnt\//}
-      HOST_PWD="/${HOST_PWD}"
-  else
-      HOST_PWD=`pwd -P`
-      HOST_PWD=${HOST_PWD/\/mnt\//}
-      HOST_PWD=${HOST_PWD/\//:\/}
+  elif [ -n "${is_cygwin}" ]; then
+      # directory=$PWD
+      directory=${directory/\//}
+      directory=${directory/\//:\/}
+  # else
+      # directory=$PWD
   fi
-elif [ -n "$MSYS" ]; then
-    HOST_PWD=$PWD
-    HOST_PWD=${HOST_PWD/\//}
-    HOST_PWD=${HOST_PWD/\//:\/}
-else
-    HOST_PWD=$PWD
-fi
 
-# Mount Additional Volumes
-if [ -z "$SSH_DIR" ]; then
-    SSH_DIR="$HOME/.ssh"
-fi
+  eval ${result}="${directory}"
+}
 
-HOST_VOLUMES=
-if [ -e "$SSH_DIR" ]; then
-    HOST_VOLUMES+="-v $SSH_DIR:/home/$(id -un)/.ssh"
-fi
+RunDocker()
+{
+  # Usage: RunDocker <image_name> <session_dir> <commands>
 
-#------------------------------------------------------------------------------
-# Now, finally, run the command in a container
-#
-tty -s && TTY_ARGS=-ti || TTY_ARGS=
-CONTAINER_NAME="${config_repository_image}_${RANDOM}"
+  local docker_image=$1
+  shift 1
+  local session_dir=$1
+  shift 1
 
-Log "Equivalent Docker command: docker run --rm ${TTY_ARGS} --name ${CONTAINER_NAME} -v \"${HOST_PWD}\":/work ${HOST_VOLUMES} ${USER_ID} ${FINAL_ARGS} ${FINAL_IMAGE} \"$@\""
+  local container_name="${docker_image/\//-}-${RANDOM}"
+  local work_dir="$(pwd -P)"
+  NormalizeDir work_dir "${work_dir}"
+  NormalizeDir session_dir "${session_dir}"
 
+  local shell_command="docker run -it --rm --name ${container_name} -v "${session_dir}":/session -v "${work_dir}":/work ${docker_image} $@"
+  Log "info" "5" "Docker Command" "${shell_command}"
+  eval ${shell_command}
+  # docker run -it --rm --name ${container_name} -v "${session_dir}":/session -v "${work_dir}":/work ${docker_image} "$@"
+}
 
-docker run $TTY_ARGS --name $CONTAINER_NAME \
-    -v "$HOST_PWD":/work \
-    $HOST_VOLUMES \
-    $USER_IDS \
-    $FINAL_ARGS \
-    $FINAL_IMAGE "$@"
-run_exit_code=$?
+MainFunction()
+{
+  local post_execution="${g_session_dir}/exec.sh"
+  echo "" > "${post_execution}"
 
-# Attempt to delete container
-rm_output=$(docker rm -f $CONTAINER_NAME 2>&1)
-rm_exit_code=$?
-if [[ $rm_exit_code != 0 ]]; then
-  if [[ "$CIRCLECI" == "true" ]] && [[ $rm_output == *"Driver btrfs failed to remove"* ]]; then
-    : # Ignore error because of https://circleci.com/docs/docker-btrfs-error/
-  else
-    echo "$rm_output"
-    exit $rm_exit_code
-  fi
-fi
+  # exec &> "${g_session_dir}/run_image.log"
+  RunDocker "${config_image}" "${g_session_dir}" ${config_options}
+  # exec &>/dev/tty
 
-exit $run_exit_code
+  ${post_execution}
+}
 
+set -E
+trap 'ErrorHandler $LINENO' ERR
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+Init
+GetConfiguration "$@"
+ScriptDetail
+MainFunction
+End
 

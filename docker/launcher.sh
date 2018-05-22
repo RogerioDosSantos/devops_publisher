@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# Exit on any non-zero status.
-trap 'exit' ERR
-set -E
-
 # Functions
 
 Log()
@@ -30,85 +26,81 @@ Init()
   g_caller_dir=$(pwd)
   cd "$(dirname "$0")"
   g_script_dir=$(pwd)
-  cd "$(dirname "$0")"
 }
 
 End()
 {
-  # Setup - Return to the called directory
+  Log "info" "5" "Returning to caller directory" "${g_caller_dir}"
   cd "${g_caller_dir}"
+}
+
+ErrorHandler()
+{
+  # Usage: ErrorHandler <last_line>
+  local last_line=$1
+  Log "error" "1" "Last line executed" "${last_line}"
+  End
+  exit 1
 }
 
 ScriptDetail()
 {
-  Log "info" "5" "Script Name" "$(basename "$0")"
+  Log "info" "5" "Script Name" "${g_script_name}"
   Log "info" "5" "Caller Directory" "${g_caller_dir}"
   Log "info" "5" "Script Directory" "${g_script_dir}"
 }
 
 DisplayHelp()
 {
-  echo " "
-  echo "Publisher Help"
-  echo " "
   echo "publisher <command> [<command_options>]"
   echo " "
   echo "- Commands:"
   echo "help : Display this command help"
+  echo "create_metadata : Create publishing metadata information"
   echo " "
   echo "For command special help type:"
   echo "publisher <command> --help"
-  echo " "
 }
 
-GetConfiguration()
+RunCommand()
 {
-  if [[ $# < 1  ]]; then
+  config_log_enabled="0"
+  # Usage: RunCommand <command_name> <parameters>
+
+  if [[ $# == 0 ]]; then
+    Log "error" "1" "Command not informed" ""
     DisplayHelp
-    exit
+    return 0
   fi
 
-  config_command_name=""
-  config_command_options=""
   local command_name=$1
   shift 1
-  case ${command_name} in
-      help)
-          DisplayHelp
-          exit
-          ;;
-      command)
-          config_command_name=${command_name}
-          config_command_options=$@
-          return 0
-          ;;
-      *)
-          Log "error" "1" "Unknown Command" "${command_name}"
-          echo "Unknown Command: ${command_name}"
-          DisplayHelp
-          exit
-          ;;
-  esac
+
+  if [ "${command_name}" = "help" ]; then
+    DisplayHelp
+    return 0
+  fi
+
+  local command_file_path="${g_script_dir}/../src/scripts/${command_name}.sh"
+  # command_file_path=$(realpath ${command_file_path})
+  Log "info" "1" "Command File" "${command_file_path}"
+  if [ -f "${command_file_path}"  ]; then
+    ${command_file_path} "$@"
+  else
+    Log "error" "1" "Invalid Command" "${command_name}"
+    echo "Invalid command: ${command_name}"
+    DisplayHelp
+    return 0
+  fi
 }
 
-MainFunction()
-{
-  config_log_enabled="1"
-  local session_dir="${g_script_dir}/${RANDOM}_publisher_${RANDOM}"
-  Log "info" "1" "Session Directory" "${session_dir}"
+# Main
 
-
-  Log "info" "1" "Calling Command" "${config_command_name} ${config_command_options}"
-  case ${config_command_name} in
-      command)
-          ;;
-  esac
-
-}
+set -E
+trap 'ErrorHandler $LINENO' ERR
 
 Init
-GetConfiguration "$@"
+RunCommand "$@"
 ScriptDetail
-MainFunction
-End
+End 0
 
