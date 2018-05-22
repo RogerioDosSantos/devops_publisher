@@ -33,11 +33,12 @@ if [[ -n $HOST_USER ]] && [[ -n $HOST_GID ]]; then
 
     # Run the command as the specified user/group.
     # exec gosu $HOST_USER:$HOST_GID "$@"
-    gosu $HOST_USER:$HOST_GID ./launcher.sh "$@"
+    cd /work
+    gosu $HOST_USER:$HOST_GID /docker/launcher.sh "$@"
 else
     # Just run the command as root.
     cd /work
     # exec "$@"
     # exec "/docker/launcher.sh "$@""
-    ./launcher.sh "$@"
+    /docker/launcher.sh "$@"
 fi

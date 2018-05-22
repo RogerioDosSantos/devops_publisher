@@ -82,6 +82,7 @@ RunCommand()
   fi
 
   if [ "${command_name}" = "bash" ]; then
+    cd ${g_caller_dir}
     bash "$@"
     return 0
   fi
@@ -105,7 +106,7 @@ RunCommand()
 set -E
 trap 'ErrorHandler $LINENO' ERR
 
-config_log_enabled="1"
+config_log_enabled="0"
 Init
 ScriptDetail
 RunCommand "$@"

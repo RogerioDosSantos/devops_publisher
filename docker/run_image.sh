@@ -124,6 +124,7 @@ RunDocker()
   shift 1
 
   local container_name="${docker_image/\//-}-${RANDOM}"
+  cd ${g_caller_dir}
   local work_dir="$(pwd -P)"
   NormalizeDir work_dir "${work_dir}"
   NormalizeDir session_dir "${session_dir}"
