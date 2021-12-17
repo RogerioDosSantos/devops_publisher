@@ -6,3 +6,4 @@
 !**/build/*.cmake
 !**/build/*.in
 !**/build/DockerFile
+tags
